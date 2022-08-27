@@ -10,21 +10,29 @@ function loadEnvFile()
     }
 }
 
-function createEnv([Hashtable]$params, [Boolean]$append=$false, [string]$defaultSettingsFile=$null, [string]$saveTo=$null, [Boolean]$allowDefaults=$false)
+function createEnv()
 {
+    param(
+        [Parameter()][Hashtable]$params,
+        [Parameter()][Boolean]$append=$False,
+        [Parameter()][string]$defaultSettingsFile=$null,
+        [Parameter()][string]$saveTo=$null,
+        [Parameter()][Boolean]$allowDefaults=$False
+    )
+    
     # use default settings file if we didn't provide a path AND are allowing defaults
-    if(($defaultSettingsFile -eq $null) -and $allowDefaults)
+    if(([string]::IsNullOrEmpty($defaultSettingsFile)) -and $allowDefaults)
     {
         $defaultSettingsFile = $defaultVarPath
     }
     
-    if($saveTo -eq $null)
+    if([string]::IsNullOrEmpty($saveTo))
     {
         $saveTo = $envPath
     }
     
     # only if default settings file was provided shall we load it up
-    if(Test-Path $defaultSettingsFile)
+    if($allowDefaults -and (-not([string]::IsNullOrEmpty($defaultSettingsFile))) -and (Test-Path $defaultSettingsFile))
     {
         foreach($line in Get-Content $defaultSettingsFile)
         {
@@ -39,7 +47,7 @@ function createEnv([Hashtable]$params, [Boolean]$append=$false, [string]$default
     }
     
     # create file if not exists
-    if(-not (Test-Path $saveTo))
+    if((-not([string]::IsNullOrEmpty($saveTo))) -and -not (Test-Path $saveTo))
     {
         New-Item $envPath
     }
@@ -57,9 +65,15 @@ function createEnv([Hashtable]$params, [Boolean]$append=$false, [string]$default
     }
 }
 
-function getContainerHealth([string]$containerName, [Int32]$attempts=10, [Int32]$waitInterval=5)
+function getContainerHealth()
 {
-    $check = $false
+    param(
+        [Parameter()][string]$containerName,
+        [Parameter()][Int32]$attempts=10,
+        [Parameter()][Int32]$waitInterval=5
+    )
+    
+    $check = $False
 
     while($attempts -gt 0 -and (-not $check))
     {
@@ -80,14 +94,27 @@ function getContainerHealth([string]$containerName, [Int32]$attempts=10, [Int32]
     return $check
 }
 
-function startDb([string]$composeFolder, [string]$serviceName, [string]$projectFolder, [string]$image = "mysql:latest")
+function startDb()
 {
+    param(
+        [Parameter()][string]$composeFolder,
+        [Parameter()][string]$serviceName,
+        [Parameter()][string]$projectFolder,
+        [Parameter()][string]$image="mysql:latest"
+    )
+    
+    if([string]::IsNullOrEmpty($image))
+    {
+        Write-Output "Invalid image '$image'"
+        exit
+    }
+    
     $currentPath = $PWD
     Write-Output "Pulling $image"
     docker pull $image
     
     Write-Output "Starting $serviceName..."
-    docker-compose --env-file $envPath up -d $serviceName
+    docker-compose --env-file "$envPath" up -d "$serviceName"
     
     if(-not (getContainerHealth $serviceName))
     {
@@ -103,25 +130,37 @@ function startDb([string]$composeFolder, [string]$serviceName, [string]$projectF
     Write-Output "Complete..."
 }
 
-function resetDb([string]$composeFolder, [string]$serviceName, [string]$projectFolder, [string]$envPathName = "DB_PATH", [string]$image="mysql:latest")
+function resetDb()
 {
+    param(
+        [Parameter()][string]$composeFolder,
+        [Parameter()][string]$serviceName,
+        [Parameter()][string]$projectFolder,
+        [Parameter()][string]$envPathName="DB_PATH",
+        [Parameter()][string]$image="mysql:latest"
+    )
+    
     loadEnvFile
     $currentPath = $PWD
-    
+
+    Write-Output "Changing Context: $composeFolder"
     cd $composeFolder
     Write-Output "Tearing down $serviceName..."
-    docker-compose down $serviceName
+    docker-compose --env-file "$envPath" rm -svf $serviceName
     
     $path = [System.Environment]::GetEnvironmentVariable($envPathName)
     
-    if(-not(Test-Path $path))
+    if([string]::IsNullOrEmpty($path))
     {
-        Write-Output "Oops. Was unable to locate $path..."
+        Write-Output "Oops. $envPathName -- Was unable to locate $path..."
         exit
     }
     
-    Write-Output "Cleaning up $path.."
-    Remove-Item -Recurse $path
+    if(Test-Path $path)
+    {
+        Write-Output "Cleaning up $path.."
+        Remove-Item -Recurse $path    
+    }
     
     startDb -composeFolder $composeFolder -serviceName $serviceName -projectFolder $projectFolder -image $image
     
