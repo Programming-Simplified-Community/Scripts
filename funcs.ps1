@@ -1,4 +1,5 @@
 ﻿$envPath = [IO.Path]::Combine($PSScriptRoot, "..", ".env")
+$defaultVarPath = [IO.Path]::Combine($PSScriptRoot, "..", ".defaults")
 
 function loadEnvFile()
 {
@@ -9,24 +10,50 @@ function loadEnvFile()
     }
 }
 
-function createEnv([Hashtable]$params, [Boolean]$append=$false)
+function createEnv([Hashtable]$params, [Boolean]$append=$false, [string]$defaultSettingsFile=$null, [string]$saveTo=$null, [Boolean]$allowDefaults=$false)
 {
+    # use default settings file if we didn't provide a path AND are allowing defaults
+    if(($defaultSettingsFile -eq $null) -and $allowDefaults)
+    {
+        $defaultSettingsFile = $defaultVarPath
+    }
+    
+    if($saveTo -eq $null)
+    {
+        $saveTo = $envPath
+    }
+    
+    # only if default settings file was provided shall we load it up
+    if(Test-Path $defaultSettingsFile)
+    {
+        foreach($line in Get-Content $defaultSettingsFile)
+        {
+            $split = $line -split '='
+            
+            # only give value IF we didn't manually set it
+            if(-not ($params.ContainsKey($split[0])))
+            {
+                $params[$split[0]] = $split[1]
+            }
+        }
+    }
+    
     # create file if not exists
-    if(-not (Test-Path $envPath))
+    if(-not (Test-Path $saveTo))
     {
         New-Item $envPath
     }
     
     if(-not $append)
     {
-        Remove-Item $envPath
-        New-Item $envPath
+        Remove-Item $saveTo
+        New-Item $saveTo
     }
     
     foreach($key in $params.Keys)
     {
         $val = $params["$key"]
-        Add-Content $envPath "$key=$val"
+        Add-Content $saveTo "$key=$val"
     }
 }
 
